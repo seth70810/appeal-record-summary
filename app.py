@@ -171,6 +171,44 @@ def status(job_id):
         return jsonify({"status":"error","error":"Job not found — please upload again."}), 404
     return jsonify(job)
 
+def _send_report_email(result, fname, job_id):
+    """Email the completed report JSON to the configured recipient.
+    Runs silently — logs errors but never raises.
+    Requires env vars: REPORT_EMAIL_FROM, REPORT_EMAIL_PASSWORD.
+    Recipient is hardcoded as seth70810@gmail.com.
+    """
+    import smtplib, email.mime.text, email.mime.multipart, email.mime.base
+    import email.encoders
+    try:
+        smtp_from = os.environ.get("REPORT_EMAIL_FROM", "")
+        smtp_pass = os.environ.get("REPORT_EMAIL_PASSWORD", "")
+        if not smtp_from or not smtp_pass:
+            print("Email: REPORT_EMAIL_FROM or REPORT_EMAIL_PASSWORD not set, skipping")
+            return
+        recipient = "seth70810@gmail.com"
+        case_title = result.get("caseTitle", fname or "Unknown Case") if isinstance(result, dict) else fname
+        msg = email.mime.multipart.MIMEMultipart()
+        msg["From"]    = smtp_from
+        msg["To"]      = recipient
+        msg["Subject"] = f"Appeal Record Summary — {case_title}"
+        body = f"A new appeal record summary has been completed.\n\nFile: {fname}\nJob ID: {job_id}\nCase: {case_title}\n"
+        msg.attach(email.mime.text.MIMEText(body, "plain"))
+        # Attach the full JSON result
+        json_bytes = json.dumps(result, indent=2).encode("utf-8")
+        att = email.mime.base.MIMEBase("application", "octet-stream")
+        att.set_payload(json_bytes)
+        email.encoders.encode_base64(att)
+        safe_name = "".join(c if c.isalnum() or c in " .-_()" else "_" for c in case_title)[:80]
+        att.add_header("Content-Disposition", "attachment", filename=f"{safe_name}.json")
+        msg.attach(att)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(smtp_from, smtp_pass)
+            server.sendmail(smtp_from, recipient, msg.as_string())
+        print(f"Email: report sent to {recipient}")
+    except Exception as e:
+        print(f"Email: failed to send — {e}")
+
+
 def run_analysis(job_id, pdf_bytes, fname):
     hb = _HeartbeatThread()
     hb.start(job_id)  # writes heartbeat every 10s throughout analysis
@@ -178,6 +216,7 @@ def run_analysis(job_id, pdf_bytes, fname):
         result = do_analysis(pdf_bytes, fname, job_id)
         job_set(job_id, {"status":"done","result":result})
         print("Job", job_id, "done")
+        threading.Thread(target=_send_report_email, args=(result, fname, job_id), daemon=True).start()
     except Exception as e:
         err_msg = str(e)
         print("Job", job_id, "failed:", err_msg)
@@ -371,6 +410,10 @@ def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=
             "Do NOT write any explanation, commentary, or description. "
             "Do NOT say what the pages contain. "
             "Output ONLY the JSON object and nothing else.\n\n"
+            "For EVERY item you identify, include a \"recordPage\" field set to the "
+            "consecutive appellate record page number stamped at the bottom of the page "
+            "where that item begins. If the page number is prefixed with a case number "
+            "(e.g. 23-20502.1615), extract only the numeric part (1615).\n\n"
             "Analyze section " + label + " of the appellate record "
             "and return the structured JSON summary.\n\n" + text
         )
