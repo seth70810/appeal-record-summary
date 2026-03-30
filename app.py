@@ -290,7 +290,7 @@ def _retry_wait_seconds(e, attempt):
     print(f"    Rate limited (attempt {attempt+1}). Waiting {wait}s...")
     return wait
 
-def _call_claude_with_retry(client, system, user_content, max_tokens=8000, max_retries=8, job_id=None):
+def _call_claude_with_retry(client, system, user_content, max_tokens=16000, max_retries=8, job_id=None):
     """Call Claude API; on rate-limit errors waits the header-specified reset
     time (or exponential backoff) before retrying.
     Also returns the tokens_used so callers can pace themselves.
@@ -373,8 +373,15 @@ def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=
         r = _call_claude_with_retry(client, SYSTEM_PROMPT, prompt, job_id=job_id)
         last_input_tokens = _tokens_used(r)
         prompt = None
-        results.append(parse_json(r.content[0].text))
-        print(f"    Chunk {i+1}/{n} OK — pages {start+1}-{end}/{total_pages} ({last_input_tokens} tokens)")
+        stop_reason = getattr(r, "stop_reason", None)
+        raw_text = r.content[0].text if r.content else ""
+        if stop_reason == "max_tokens":
+            print(f"    WARNING: Chunk {i+1} hit max_tokens limit — response may be truncated")
+        if not raw_text.strip():
+            print(f"    WARNING: Chunk {i+1} returned empty response, skipping")
+            continue
+        results.append(parse_json(raw_text))
+        print(f"    Chunk {i+1}/{n} OK — pages {start+1}-{end}/{total_pages} ({last_input_tokens} tokens, stop={stop_reason})")
         gc.collect()
     return results
 
@@ -446,19 +453,39 @@ def merge_results(client, partials):
             print("  Merge batch", (i//BATCH)+1, "of", math.ceil(len(partials)/BATCH))
             r = _call_claude_with_retry(client, MERGE_PROMPT+combined, "Merge these into one comprehensive JSON summary.")
             combined = None; gc.collect()
-            next_round.append(parse_json(r.content[0].text))
+            raw_merge = r.content[0].text if r.content else ""
+            if not raw_merge.strip():
+                raise ValueError("Merge step returned empty response from Claude")
+            next_round.append(parse_json(raw_merge))
         partials = next_round
     return partials[0]
 
 def parse_json(raw):
     clean = raw.strip()
+    if not clean:
+        raise ValueError("Claude returned an empty response")
+    # Strip markdown code fences if present
     if "```" in clean:
         for part in clean.split("```"):
             part = part.strip()
             if part.startswith("json"): part = part[4:].strip()
-            try: return json.loads(part)
-            except Exception: continue
-    return json.loads(clean)
+            if part.startswith("{") or part.startswith("["):
+                try: return json.loads(part)
+                except Exception: continue
+    # Try direct parse
+    if clean.startswith("{") or clean.startswith("["):
+        try: return json.loads(clean)
+        except json.JSONDecodeError:
+            # Response may be truncated mid-JSON — try to find last complete object
+            last_brace = clean.rfind("}")
+            if last_brace > 0:
+                try: return json.loads(clean[:last_brace+1])
+                except Exception: pass
+    # Last resort: raise with context so the log shows what Claude returned
+    preview = clean[:200].replace("\n", " ")
+    raise ValueError(f"Could not parse JSON from Claude response. "
+                     f"stop_reason may indicate truncation. "
+                     f"Response preview: {preview!r}")
 
 # ── SIGTERM handler ────────────────────────────────────────────────────────
 # Render sends SIGTERM before shutting down the process. We catch it and
