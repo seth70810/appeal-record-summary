@@ -7,7 +7,7 @@ CORS(app)
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 REDIS_URL         = os.environ.get("REDIS_URL", "")
-MAX_PAGES_PER_CHUNK = 80
+MAX_PAGES_PER_CHUNK = 40
 MAX_FILE_BYTES = 900 * 1024 * 1024
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_BYTES
 
@@ -230,13 +230,34 @@ def analyze_single_pdf_to_partials(client, pdf_bytes, fname, job_id=None):
 
 def analyze_pdf_bytes(client, pdf_bytes):
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    r = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=8000,
-        system=SYSTEM_PROMPT,
-        messages=[{"role":"user","content":[
-            {"type":"document","source":{"type":"base64","media_type":"application/pdf","data":b64}},
-            {"type":"text","text":"Analyze this appellate court record and return the structured JSON summary."}
-        ]}])
+    r = _call_claude_with_retry(client, SYSTEM_PROMPT,
+        [{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":b64}},
+         {"type":"text","text":"Analyze this appellate court record and return the structured JSON summary."}])
     return parse_json(r.content[0].text)
+
+def _call_claude_with_retry(client, system, user_content, max_tokens=8000, max_retries=6):
+    """Call Claude API with exponential backoff on rate limit errors."""
+    import time, gc
+    delay = 15  # start with 15 second wait
+    for attempt in range(max_retries):
+        try:
+            r = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user_content}]
+            )
+            return r
+        except Exception as e:
+            msg = str(e)
+            if '429' in msg or 'rate_limit' in msg:
+                if attempt < max_retries - 1:
+                    wait = delay * (2 ** attempt)  # 15, 30, 60, 120, 240, 480s
+                    print(f"    Rate limited. Waiting {wait}s before retry {attempt+2}/{max_retries}...")
+                    time.sleep(wait)
+                    gc.collect()
+                    continue
+            raise  # re-raise non-rate-limit errors or if out of retries
 
 def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=None):
     results = []
@@ -260,9 +281,7 @@ def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=
             prompt = "Analyze this section (" + label + ") and return the structured JSON summary." + chr(10)*2 + text
             text = None  # free extracted text before API call
             import gc; gc.collect()
-            r = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=8000,
-                system=SYSTEM_PROMPT,
-                messages=[{"role":"user","content":prompt}])
+            r = _call_claude_with_retry(client, SYSTEM_PROMPT, prompt)
             prompt = None
             results.append(parse_json(r.content[0].text))
             print("    Chunk", i+1, "OK")
@@ -286,9 +305,7 @@ def merge_results(client, partials):
             combined = json.dumps(batch, indent=2)
             batch = None; gc.collect()
             print("  Merge batch", (i//BATCH)+1, "of", math.ceil(len(partials)/BATCH))
-            r = client.messages.create(model="claude-sonnet-4-20250514", max_tokens=8000,
-                system=MERGE_PROMPT+combined,
-                messages=[{"role":"user","content":"Merge these into one comprehensive JSON summary."}])
+            r = _call_claude_with_retry(client, MERGE_PROMPT+combined, "Merge these into one comprehensive JSON summary.")
             combined = None; gc.collect()
             next_round.append(parse_json(r.content[0].text))
         partials = next_round
