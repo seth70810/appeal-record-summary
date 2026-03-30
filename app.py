@@ -536,9 +536,12 @@ def merge_results(client, partials):
             combined = json.dumps(batch, indent=2)
             batch = None; gc.collect()
             print("  Merge batch", (i//BATCH)+1, "of", math.ceil(len(partials)/BATCH))
-            r = _call_claude_with_retry(client, MERGE_PROMPT+combined, "Merge these into one comprehensive JSON summary.")
+            r = _call_claude_with_retry(client, MERGE_PROMPT+combined, "Merge these into one comprehensive JSON summary.", max_tokens=32000)
             combined = None; gc.collect()
             raw_merge = r.content[0].text if r.content else ""
+            merge_stop = getattr(r, "stop_reason", None)
+            if merge_stop == "max_tokens":
+                print(f"  WARNING: merge hit max_tokens — response truncated, attempting recovery")
             if not raw_merge.strip():
                 raise ValueError("Merge step returned empty response from Claude")
             next_round.append(parse_json(raw_merge))
@@ -549,25 +552,45 @@ def parse_json(raw):
     clean = raw.strip()
     if not clean:
         raise ValueError("Claude returned an empty response")
+
+    def _try_parse(text):
+        """Try to parse text as JSON; on failure attempt truncation recovery."""
+        text = text.strip()
+        if not (text.startswith("{") or text.startswith("[")):
+            return None
+        # First try direct parse
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        # Truncation recovery: find the last complete closing brace
+        last_brace = text.rfind("}")
+        if last_brace > 0:
+            try:
+                return json.loads(text[:last_brace + 1])
+            except Exception:
+                pass
+        return None
+
     # Strip markdown code fences if present
     if "```" in clean:
-        for part in clean.split("```"):
+        # Extract the content between fences
+        parts = clean.split("```")
+        for part in parts:
             part = part.strip()
-            if part.startswith("json"): part = part[4:].strip()
-            if part.startswith("{") or part.startswith("["):
-                try: return json.loads(part)
-                except Exception: continue
-    # Try direct parse
-    if clean.startswith("{") or clean.startswith("["):
-        try: return json.loads(clean)
-        except json.JSONDecodeError:
-            # Response may be truncated mid-JSON — try to find last complete object
-            last_brace = clean.rfind("}")
-            if last_brace > 0:
-                try: return json.loads(clean[:last_brace+1])
-                except Exception: pass
-    # Last resort: raise with context so the log shows what Claude returned
-    preview = clean[:200].replace("\n", " ")
+            if part.startswith("json"):
+                part = part[4:].strip()
+            result = _try_parse(part)
+            if result is not None:
+                return result
+
+    # Try the whole response directly (no fences)
+    result = _try_parse(clean)
+    if result is not None:
+        return result
+
+    # Nothing worked — raise with a useful preview
+    preview = clean[:300].replace("\n", " ")
     raise ValueError(f"Could not parse JSON from Claude response. "
                      f"stop_reason may indicate truncation. "
                      f"Response preview: {preview!r}")
