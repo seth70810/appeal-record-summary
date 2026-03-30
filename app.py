@@ -5,6 +5,9 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+# Track in-flight analysis threads so SIGTERM can mark them as errors
+_active_jobs = {}  # job_id -> Thread
+
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 REDIS_URL         = os.environ.get("REDIS_URL", "")
 MAX_PAGES_PER_CHUNK = 40
@@ -154,7 +157,9 @@ def _upload():
     print("Upload:", fname, " ", round(len(pdf_bytes)/1048576,1), "MB")
     job_id = str(uuid.uuid4())
     job_set(job_id, {"status":"processing","progress":"Preparing document..."})
-    threading.Thread(target=run_analysis, args=(job_id,pdf_bytes,fname), daemon=True).start()
+    t = threading.Thread(target=run_analysis, args=(job_id,pdf_bytes,fname), daemon=True)
+    _active_jobs[job_id] = t
+    t.start()
     return jsonify({"job_id":job_id}), 202
 
 @app.route("/status/<job_id>")
@@ -173,11 +178,12 @@ def run_analysis(job_id, pdf_bytes, fname):
         err_msg = str(e)
         print("Job", job_id, "failed:", err_msg)
         print(traceback.format_exc())
-        # Write error to Redis so the browser shows it rather than spinning
         try:
             job_set(job_id, {"status":"error","error":err_msg})
         except Exception as redis_e:
             print("Could not write error to Redis:", redis_e)
+    finally:
+        _active_jobs.pop(job_id, None)  # clean up tracking dict
 
 def do_analysis(pdf_bytes, fname, job_id=None):
     import gc
@@ -396,6 +402,26 @@ def parse_json(raw):
             try: return json.loads(part)
             except Exception: continue
     return json.loads(clean)
+
+# ── SIGTERM handler ────────────────────────────────────────────────────────
+# Render sends SIGTERM before shutting down the process. We catch it and
+# write an error to Redis for every in-flight job so the browser shows a
+# real error message instead of spinning forever.
+import signal
+def _handle_sigterm(signum, frame):
+    print("SIGTERM received — marking", len(_active_jobs), "active jobs as failed")
+    for jid in list(_active_jobs.keys()):
+        try:
+            job_set(jid, {"status":"error",
+                "error":"The server was restarted while your document was being analyzed. "
+                        "Please upload your document again."})
+            print("  Marked job", jid, "as error")
+        except Exception as e:
+            print("  Could not mark job", jid, ":", e)
+    # Allow gunicorn to proceed with its shutdown
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
