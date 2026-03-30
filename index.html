@@ -6,83 +6,150 @@
 <title>Appeal Record Summary</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Crimson+Pro:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --navy: #0d1b2a; --navy-mid: #162032;
-    --gold: #c9a84c; --gold-light: #e2c47a; --cream: #faf6ef;
-    --text-light: #7a6a50; --border-gold: rgba(201,168,76,0.3);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Crimson Pro', Georgia, serif; background: var(--navy); color: var(--cream); min-height: 100vh; }
-  body::before { content: ''; position: fixed; inset: 0; background-image: radial-gradient(ellipse at 20% 0%, rgba(201,168,76,0.08) 0%, transparent 50%), radial-gradient(ellipse at 80% 100%, rgba(201,168,76,0.06) 0%, transparent 50%); pointer-events: none; z-index: 0; }
-  .wrapper { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 0 24px 80px; }
-
-  header { text-align: center; padding: 56px 0 40px; border-bottom: 1px solid var(--border-gold); margin-bottom: 48px; }
-  .seal { width: 64px; height: 64px; margin: 0 auto 20px; border: 2px solid var(--gold); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; color: var(--gold); position: relative; }
-  .seal::before { content: ''; position: absolute; inset: 4px; border: 1px solid var(--border-gold); border-radius: 50%; }
-  h1 { font-family: 'Playfair Display', serif; font-size: clamp(2rem,4vw,3rem); font-weight: 700; color: var(--gold-light); letter-spacing: 0.02em; line-height: 1.1; }
-  .subtitle { margin-top: 10px; font-size: 1.05rem; color: rgba(201,168,76,0.6); font-style: italic; letter-spacing: 0.08em; }
-
-  .upload-section { background: var(--navy-mid); border: 1px solid var(--border-gold); border-radius: 4px; padding: 48px 40px; text-align: center; margin-bottom: 32px; }
-  .pick-area { border: 2px dashed rgba(201,168,76,0.4); border-radius: 4px; padding: 52px 32px; background: rgba(201,168,76,0.03); transition: all 0.25s; }
-  .pick-area.has-file { border-color: var(--gold); background: rgba(201,168,76,0.07); }
-  .drop-icon { font-size: 2.8rem; margin-bottom: 16px; display: block; opacity: 0.7; }
-  .pick-area h3 { font-family: 'Playfair Display', serif; font-size: 1.3rem; color: var(--gold-light); margin-bottom: 8px; }
-  .pick-area p { color: rgba(250,246,239,0.5); font-size: 0.95rem; margin-bottom: 20px; }
-  #fileInput { display: none; }
-  .btn-browse { display: inline-block; border: 1px solid var(--gold); color: var(--gold); background: transparent; padding: 10px 28px; font-family: 'Crimson Pro', serif; font-size: 1rem; border-radius: 3px; cursor: pointer; transition: all 0.2s; }
-  .btn-browse:hover { background: rgba(201,168,76,0.12); }
-  .file-info { margin-top: 18px; display: none; align-items: center; justify-content: center; gap: 10px; font-size: 0.95rem; }
-  .file-info.visible { display: flex; }
-  .fname { color: var(--gold-light); font-weight: 500; word-break: break-all; }
-  .fsize { color: var(--text-light); font-size: 0.85rem; flex-shrink: 0; }
-  .btn-clear { background: none; border: none; color: var(--text-light); cursor: pointer; font-size: 1.1rem; padding: 0 4px; flex-shrink: 0; }
-  .btn-clear:hover { color: #f4a0a0; }
-  .btn-analyze { margin-top: 28px; background: linear-gradient(135deg, var(--gold) 0%, #a07c30 100%); color: var(--navy); border: none; padding: 16px 52px; font-family: 'Playfair Display', serif; font-size: 1.05rem; font-weight: 600; letter-spacing: 0.05em; border-radius: 3px; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 20px rgba(201,168,76,0.3); display: block; margin-left: auto; margin-right: auto; }
-  .btn-analyze:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(201,168,76,0.4); }
-  .btn-analyze:disabled { opacity: 0.45; cursor: not-allowed; }
-
-  .progress-section { display: none; background: var(--navy-mid); border: 1px solid var(--border-gold); border-radius: 4px; padding: 40px; text-align: center; margin-bottom: 32px; }
-  .progress-section.visible { display: block; }
-  .spinner { width: 52px; height: 52px; border: 3px solid rgba(201,168,76,0.2); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 24px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .progress-label { font-family: 'Playfair Display', serif; font-size: 1.15rem; color: var(--gold-light); margin-bottom: 8px; }
-  .progress-sub { font-size: 0.9rem; color: rgba(250,246,239,0.45); font-style: italic; }
-  .progress-bar-wrap { margin-top: 20px; background: rgba(201,168,76,0.1); border: 1px solid var(--border-gold); border-radius: 3px; height: 8px; overflow: hidden; }
-  .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-light)); width: 0%; transition: width 0.5s ease; border-radius: 3px; }
-
-  .error-box { display: none; background: rgba(139,32,32,0.15); border: 1px solid rgba(139,32,32,0.5); border-radius: 4px; padding: 20px 24px; margin-bottom: 32px; color: #f4a0a0; font-size: 0.95rem; line-height: 1.6; }
-  .error-box.visible { display: block; }
-
-  #results { display: none; }
-  #results.visible { display: block; }
-  .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 1px solid var(--border-gold); flex-wrap: wrap; gap: 16px; }
-  .results-header h2 { font-family: 'Playfair Display', serif; font-size: 1.6rem; color: var(--gold-light); }
-  .btn-reset { background: transparent; border: 1px solid var(--border-gold); color: var(--gold); padding: 10px 24px; font-family: 'Crimson Pro', serif; font-size: 0.95rem; border-radius: 3px; cursor: pointer; transition: all 0.2s; }
-  .btn-reset:hover { background: rgba(201,168,76,0.1); border-color: var(--gold); }
-
-  .section-card { background: var(--navy-mid); border: 1px solid var(--border-gold); border-radius: 4px; margin-bottom: 24px; overflow: hidden; }
-  .section-header { background: linear-gradient(90deg, rgba(201,168,76,0.12) 0%, transparent 100%); padding: 20px 28px; display: flex; align-items: center; gap: 16px; cursor: pointer; border-bottom: 1px solid var(--border-gold); user-select: none; transition: background 0.2s; }
-  .section-header:hover { background: linear-gradient(90deg, rgba(201,168,76,0.18) 0%, transparent 100%); }
-  .section-num { width: 36px; height: 36px; border: 1px solid var(--gold); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: 0.8rem; color: var(--gold); flex-shrink: 0; }
-  .section-title { font-family: 'Playfair Display', serif; font-size: 1.1rem; color: var(--gold-light); flex: 1; }
-  .section-toggle { color: var(--gold); font-size: 1.1rem; transition: transform 0.25s; }
-  .section-card.collapsed .section-toggle { transform: rotate(-90deg); }
-  .section-body { padding: 28px; font-size: 1rem; line-height: 1.75; color: rgba(250,246,239,0.85); }
-  .section-card.collapsed .section-body { max-height: 0; padding-top: 0; padding-bottom: 0; overflow: hidden; }
-  .section-body h3 { font-family: 'Playfair Display', serif; font-size: 1.05rem; color: var(--gold); margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 1px solid rgba(201,168,76,0.2); }
-  .section-body h3:first-child { margin-top: 0; }
-  .section-body h4 { font-family: 'Crimson Pro', serif; font-size: 0.95rem; font-weight: 500; color: var(--gold-light); margin: 14px 0 4px; text-transform: uppercase; letter-spacing: 0.06em; }
-  .section-body p { margin-bottom: 10px; }
-  .section-body ul, .section-body ol { padding-left: 22px; margin-bottom: 10px; }
-  .section-body li { margin-bottom: 5px; }
-  .date-tag { display: inline-block; background: rgba(201,168,76,0.12); border: 1px solid rgba(201,168,76,0.25); color: var(--gold); font-family: 'DM Mono', monospace; font-size: 0.75rem; padding: 2px 8px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
-  .doc-entry { padding: 14px 0; border-bottom: 1px solid rgba(201,168,76,0.1); }
-  .doc-entry:last-child { border-bottom: none; }
-  .tag-admitted { display: inline-block; background: rgba(26,77,46,0.3); border: 1px solid rgba(26,77,46,0.6); color: #6fcf97; font-size: 0.72rem; padding: 2px 8px; border-radius: 2px; font-family: 'DM Mono', monospace; }
-  .tag-denied { display: inline-block; background: rgba(139,32,32,0.3); border: 1px solid rgba(139,32,32,0.6); color: #f4a0a0; font-size: 0.72rem; padding: 2px 8px; border-radius: 2px; font-family: 'DM Mono', monospace; }
-
-  footer { text-align: center; padding: 32px 0 0; border-top: 1px solid var(--border-gold); margin-top: 48px; font-size: 0.85rem; color: rgba(201,168,76,0.35); font-style: italic; }
-  @media (max-width: 600px) { .upload-section, .section-body { padding: 24px 20px; } .pick-area { padding: 36px 20px; } .btn-analyze { width: 100%; } }
+/* ── Screen styles ─────────────────────────────────────────── */
+:root {
+  --navy:#0d1b2a; --navy-mid:#162032; --gold:#c9a84c; --gold-light:#e2c47a;
+  --cream:#faf6ef; --text-light:#7a6a50; --border-gold:rgba(201,168,76,0.3);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Crimson Pro',Georgia,serif;background:var(--navy);color:var(--cream);min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(ellipse at 20% 0%,rgba(201,168,76,.08) 0%,transparent 50%),radial-gradient(ellipse at 80% 100%,rgba(201,168,76,.06) 0%,transparent 50%);pointer-events:none;z-index:0}
+.wrapper{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 24px 80px}
+header{text-align:center;padding:56px 0 40px;border-bottom:1px solid var(--border-gold);margin-bottom:48px}
+.seal{width:64px;height:64px;margin:0 auto 20px;border:2px solid var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:28px;color:var(--gold);position:relative}
+.seal::before{content:'';position:absolute;inset:4px;border:1px solid var(--border-gold);border-radius:50%}
+h1{font-family:'Playfair Display',serif;font-size:clamp(2rem,4vw,3rem);font-weight:700;color:var(--gold-light);letter-spacing:.02em;line-height:1.1}
+.subtitle{margin-top:10px;font-size:1.05rem;color:rgba(201,168,76,.6);font-style:italic;letter-spacing:.08em}
+.upload-section{background:var(--navy-mid);border:1px solid var(--border-gold);border-radius:4px;padding:48px 40px;text-align:center;margin-bottom:32px}
+.pick-area{border:2px dashed rgba(201,168,76,.4);border-radius:4px;padding:52px 32px;background:rgba(201,168,76,.03);transition:all .25s}
+.pick-area.has-file{border-color:var(--gold);background:rgba(201,168,76,.07)}
+.drop-icon{font-size:2.8rem;margin-bottom:16px;display:block;opacity:.7}
+.pick-area h3{font-family:'Playfair Display',serif;font-size:1.3rem;color:var(--gold-light);margin-bottom:8px}
+.pick-area p{color:rgba(250,246,239,.5);font-size:.95rem;margin-bottom:20px}
+#fileInput{display:none}
+.btn-browse{display:inline-block;border:1px solid var(--gold);color:var(--gold);background:transparent;padding:10px 28px;font-family:'Crimson Pro',serif;font-size:1rem;border-radius:3px;cursor:pointer;transition:all .2s}
+.btn-browse:hover{background:rgba(201,168,76,.12)}
+.file-info{margin-top:18px;display:none;align-items:center;justify-content:center;gap:10px;font-size:.95rem}
+.file-info.visible{display:flex}
+.fname{color:var(--gold-light);font-weight:500;word-break:break-all}
+.fsize{color:var(--text-light);font-size:.85rem;flex-shrink:0}
+.btn-clear{background:none;border:none;color:var(--text-light);cursor:pointer;font-size:1.1rem;padding:0 4px;flex-shrink:0}
+.btn-clear:hover{color:#f4a0a0}
+.btn-analyze{margin-top:28px;background:linear-gradient(135deg,var(--gold) 0%,#a07c30 100%);color:var(--navy);border:none;padding:16px 52px;font-family:'Playfair Display',serif;font-size:1.05rem;font-weight:600;letter-spacing:.05em;border-radius:3px;cursor:pointer;transition:all .2s;box-shadow:0 4px 20px rgba(201,168,76,.3);display:block;margin-left:auto;margin-right:auto}
+.btn-analyze:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 28px rgba(201,168,76,.4)}
+.btn-analyze:disabled{opacity:.45;cursor:not-allowed}
+.progress-section{display:none;background:var(--navy-mid);border:1px solid var(--border-gold);border-radius:4px;padding:40px;text-align:center;margin-bottom:32px}
+.progress-section.visible{display:block}
+.spinner{width:52px;height:52px;border:3px solid rgba(201,168,76,.2);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 24px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.progress-label{font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--gold-light);margin-bottom:8px}
+.progress-sub{font-size:.9rem;color:rgba(250,246,239,.45);font-style:italic}
+.progress-bar-wrap{margin-top:20px;background:rgba(201,168,76,.1);border:1px solid var(--border-gold);border-radius:3px;height:8px;overflow:hidden}
+.progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--gold),var(--gold-light));width:0%;transition:width .5s ease;border-radius:3px}
+.error-box{display:none;background:rgba(139,32,32,.15);border:1px solid rgba(139,32,32,.5);border-radius:4px;padding:20px 24px;margin-bottom:32px;color:#f4a0a0;font-size:.95rem;line-height:1.6}
+.error-box.visible{display:block}
+#results{display:none}
+#results.visible{display:block}
+.results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:40px;padding-bottom:20px;border-bottom:1px solid var(--border-gold);flex-wrap:wrap;gap:16px}
+.results-header h2{font-family:'Playfair Display',serif;font-size:1.6rem;color:var(--gold-light)}
+.results-actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn-action{background:transparent;border:1px solid var(--border-gold);color:var(--gold);padding:10px 20px;font-family:'Crimson Pro',serif;font-size:.95rem;border-radius:3px;cursor:pointer;transition:all .2s;letter-spacing:.03em;display:flex;align-items:center;gap:6px}
+.btn-action:hover{background:rgba(201,168,76,.1);border-color:var(--gold)}
+.btn-action.primary{background:linear-gradient(135deg,var(--gold) 0%,#a07c30 100%);color:var(--navy);border-color:transparent}
+.btn-action.primary:hover{opacity:.9;transform:translateY(-1px)}
+.case-title{font-family:'Playfair Display',serif;font-size:1.15rem;color:var(--gold);margin-bottom:28px;font-style:italic;padding:16px 20px;background:rgba(201,168,76,.08);border-left:3px solid var(--gold);border-radius:2px}
+.section-card{background:var(--navy-mid);border:1px solid var(--border-gold);border-radius:4px;margin-bottom:24px;overflow:hidden}
+.section-header{background:linear-gradient(90deg,rgba(201,168,76,.12) 0%,transparent 100%);padding:20px 28px;display:flex;align-items:center;gap:16px;cursor:pointer;border-bottom:1px solid var(--border-gold);user-select:none;transition:background .2s}
+.section-header:hover{background:linear-gradient(90deg,rgba(201,168,76,.18) 0%,transparent 100%)}
+.section-num{width:36px;height:36px;border:1px solid var(--gold);border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:.8rem;color:var(--gold);flex-shrink:0}
+.section-title{font-family:'Playfair Display',serif;font-size:1.1rem;color:var(--gold-light);flex:1}
+.section-count{font-family:'DM Mono',monospace;font-size:.75rem;color:var(--text-light);background:rgba(201,168,76,.1);padding:2px 8px;border-radius:10px}
+.section-toggle{color:var(--gold);font-size:1.1rem;transition:transform .25s}
+.section-card.collapsed .section-toggle{transform:rotate(-90deg)}
+.section-body{padding:28px;font-size:1rem;line-height:1.8;color:rgba(250,246,239,.88)}
+.section-card.collapsed .section-body{max-height:0;padding-top:0;padding-bottom:0;overflow:hidden}
+.section-body h3{font-family:'Playfair Display',serif;font-size:1.05rem;color:var(--gold);margin:28px 0 10px;padding-bottom:5px;border-bottom:1px solid rgba(201,168,76,.2)}
+.section-body h3:first-child{margin-top:0}
+.section-body h4{font-family:'Crimson Pro',serif;font-size:.9rem;font-weight:500;color:var(--gold-light);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.08em}
+.section-body p{margin-bottom:12px}
+.section-body ul,.section-body ol{padding-left:24px;margin-bottom:12px}
+.section-body li{margin-bottom:6px}
+.doc-entry{padding:18px 0;border-bottom:1px solid rgba(201,168,76,.1)}
+.doc-entry:last-child{border-bottom:none}
+.doc-entry-title{font-family:'Playfair Display',serif;font-size:1rem;color:var(--cream);font-weight:600;margin-bottom:6px}
+.doc-meta{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center}
+.date-tag{display:inline-block;background:rgba(201,168,76,.12);border:1px solid rgba(201,168,76,.25);color:var(--gold);font-family:'DM Mono',monospace;font-size:.72rem;padding:2px 8px;border-radius:2px}
+.type-tag{display:inline-block;background:rgba(201,168,76,.07);border:1px solid rgba(201,168,76,.2);color:rgba(201,168,76,.7);font-size:.78rem;padding:2px 8px;border-radius:2px;font-style:italic}
+.filed-by{font-size:.85rem;color:var(--text-light)}
+.doc-summary{font-size:.97rem;line-height:1.75;color:rgba(250,246,239,.8);margin-bottom:10px}
+.arguments-label{font-size:.82rem;font-weight:600;color:var(--gold-light);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 6px}
+.ruling-box{margin-top:12px;padding:12px 16px;background:rgba(201,168,76,.07);border-left:2px solid var(--gold);border-radius:2px}
+.ruling-label{font-size:.8rem;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.ruling-text{font-size:.95rem;color:rgba(250,246,239,.85)}
+.ruling-date{font-size:.82rem;color:var(--text-light);margin-top:4px}
+.tag-admitted{display:inline-block;background:rgba(26,77,46,.3);border:1px solid rgba(26,77,46,.6);color:#6fcf97;font-size:.72rem;padding:2px 8px;border-radius:2px;font-family:'DM Mono',monospace}
+.tag-denied{display:inline-block;background:rgba(139,32,32,.3);border:1px solid rgba(139,32,32,.6);color:#f4a0a0;font-size:.72rem;padding:2px 8px;border-radius:2px;font-family:'DM Mono',monospace}
+.tag-sustained{display:inline-block;background:rgba(139,32,32,.25);border:1px solid rgba(139,32,32,.5);color:#f4a0a0;font-size:.72rem;padding:3px 10px;border-radius:2px;font-family:'DM Mono',monospace;font-weight:600}
+.tag-overruled{display:inline-block;background:rgba(26,77,46,.25);border:1px solid rgba(26,77,46,.5);color:#6fcf97;font-size:.72rem;padding:3px 10px;border-radius:2px;font-family:'DM Mono',monospace;font-weight:600}
+.witness-name{font-family:'Playfair Display',serif;font-size:1.05rem;color:var(--cream);font-weight:600}
+.testimony-list{margin-top:10px;padding-left:20px}
+.testimony-list li{margin-bottom:8px;font-size:.97rem;color:rgba(250,246,239,.82);line-height:1.7}
+.exhibit-row{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-bottom:1px solid rgba(201,168,76,.08)}
+.exhibit-row:last-child{border-bottom:none}
+.exhibit-id{font-family:'DM Mono',monospace;font-size:.85rem;color:var(--gold);min-width:80px;flex-shrink:0}
+.exhibit-desc{flex:1;font-size:.95rem;color:rgba(250,246,239,.82)}
+.trial-day{margin-bottom:24px;padding:20px;background:rgba(201,168,76,.04);border:1px solid rgba(201,168,76,.12);border-radius:4px}
+.trial-day-header{font-family:'Playfair Display',serif;font-size:1rem;color:var(--gold-light);margin-bottom:10px;font-weight:600}
+footer{text-align:center;padding:32px 0 0;border-top:1px solid var(--border-gold);margin-top:48px;font-size:.85rem;color:rgba(201,168,76,.35);font-style:italic}
+@media(max-width:600px){.upload-section,.section-body{padding:24px 20px}.pick-area{padding:36px 20px}.btn-analyze{width:100%}.results-actions{width:100%}.btn-action{flex:1;justify-content:center}}
+ 
+/* ── Print / PDF export styles ─────────────────────────────── */
+@media print {
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body { background: #ffffff !important; color: #1a1a1a !important; font-family: Georgia, serif; font-size: 11pt; line-height: 1.6; }
+  body::before { display: none !important; }
+  .wrapper { max-width: 100%; padding: 0; }
+  header { background: #0d1b2a !important; color: #e2c47a !important; padding: 24px 32px !important; margin-bottom: 24px !important; border-bottom: 3px solid #c9a84c !important; page-break-after: avoid; }
+  header .seal { display: none; }
+  h1 { font-size: 22pt !important; color: #e2c47a !important; }
+  .subtitle { color: #c9a84c !important; }
+  .upload-section, .progress-section, .error-box, .results-actions, footer { display: none !important; }
+  #results { display: block !important; }
+  .results-header { border-bottom: 2px solid #c9a84c !important; margin-bottom: 20px !important; padding-bottom: 10px !important; }
+  .results-header h2 { color: #0d1b2a !important; font-size: 16pt !important; }
+  .results-header .results-actions { display: none !important; }
+  .case-title { background: #f5f0e8 !important; border-left: 4px solid #c9a84c !important; color: #5a3e10 !important; padding: 10px 14px !important; margin-bottom: 20px !important; font-size: 11pt !important; }
+  .section-card { border: 1px solid #c9a84c !important; margin-bottom: 16px !important; page-break-inside: avoid; background: #ffffff !important; border-radius: 0 !important; }
+  .section-card.collapsed .section-body { max-height: none !important; padding: 16px 20px !important; overflow: visible !important; }
+  .section-header { background: #0d1b2a !important; padding: 10px 16px !important; page-break-after: avoid; border-bottom: 1px solid #c9a84c !important; }
+  .section-num { border-color: #c9a84c !important; color: #c9a84c !important; width: 28px !important; height: 28px !important; font-size: .7rem !important; }
+  .section-title { color: #e2c47a !important; font-size: 12pt !important; }
+  .section-count { display: none; }
+  .section-toggle { display: none !important; }
+  .section-body { padding: 16px 20px !important; color: #1a1a1a !important; font-size: 10.5pt !important; line-height: 1.65 !important; }
+  .section-body h3 { color: #8B5E3C !important; border-bottom-color: #c9a84c !important; font-size: 11pt !important; margin-top: 16px !important; page-break-after: avoid; }
+  .section-body h4 { color: #5a3e10 !important; font-size: 9pt !important; }
+  .section-body p, .section-body li { color: #1a1a1a !important; }
+  .doc-entry { border-bottom-color: #e0d0b0 !important; padding: 12px 0 !important; page-break-inside: avoid; }
+  .doc-entry-title { color: #1a1a1a !important; font-size: 10.5pt !important; }
+  .date-tag { background: #f5f0e8 !important; border-color: #c9a84c !important; color: #5a3e10 !important; font-size: .68rem !important; }
+  .type-tag { background: #f5f0e8 !important; border-color: #d4b06a !important; color: #5a3e10 !important; }
+  .doc-summary { color: #2a2a2a !important; }
+  .ruling-box { background: #f9f5ec !important; border-left-color: #c9a84c !important; }
+  .ruling-label { color: #8B5E3C !important; }
+  .ruling-text { color: #1a1a1a !important; }
+  .tag-admitted, .tag-overruled { background: #e8f5ee !important; border-color: #4a9d6a !important; color: #1a5c35 !important; }
+  .tag-denied, .tag-sustained { background: #fdf0f0 !important; border-color: #c0544a !important; color: #8b1a1a !important; }
+  .witness-name { color: #1a1a1a !important; }
+  .testimony-list li { color: #2a2a2a !important; }
+  .trial-day { background: #f9f5ec !important; border-color: #d4b06a !important; page-break-inside: avoid; }
+  .trial-day-header { color: #5a3e10 !important; }
+  .exhibit-id { color: #8B5E3C !important; }
+  .exhibit-desc { color: #1a1a1a !important; }
+  .filed-by { color: #555 !important; }
+  .arguments-label { color: #5a3e10 !important; }
+  @page { margin: 0.75in; size: letter; }
+}
 </style>
 </head>
 <body>
@@ -92,13 +159,13 @@
     <h1>Appeal Record Summary</h1>
     <p class="subtitle">Appellate Document Analysis &amp; Digest</p>
   </header>
-
+ 
   <div class="upload-section" id="uploadSection">
     <div class="pick-area" id="pickArea">
       <span class="drop-icon">📄</span>
       <h3>Upload Court of Appeals Record</h3>
       <p>Select a PDF up to 900 MB — large records are processed automatically</p>
-      <input type="file" id="fileInput" accept=".pdf" />
+      <input type="file" id="fileInput" accept=".pdf"/>
       <button class="btn-browse" onclick="document.getElementById('fileInput').click()">Browse for PDF…</button>
       <div class="file-info" id="fileInfo">
         <span>📎</span>
@@ -109,204 +176,266 @@
     </div>
     <button class="btn-analyze" id="analyzeBtn" disabled onclick="analyzeDocument()">Analyze Record</button>
   </div>
-
+ 
   <div class="progress-section" id="progressSection">
     <div class="spinner"></div>
     <p class="progress-label" id="progressLabel">Uploading document…</p>
     <p class="progress-sub" id="progressSub">Please wait — large records may take several minutes</p>
     <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progressBarFill"></div></div>
   </div>
-
+ 
   <div class="error-box" id="errorBox"></div>
-
+ 
   <div id="results">
     <div class="results-header">
       <h2>Record Analysis</h2>
-      <button class="btn-reset" onclick="resetApp()">↩ Analyze Another</button>
+      <div class="results-actions">
+        <button class="btn-action" onclick="printSummary()">🖨 Print</button>
+        <button class="btn-action primary" onclick="exportPDF()">⬇ Save as PDF</button>
+        <button class="btn-action" onclick="resetApp()">↩ Analyze Another</button>
+      </div>
     </div>
     <div id="sectionsContainer"></div>
   </div>
-
+ 
   <footer>Appeal Record Summary · AI-Assisted Legal Document Analysis · Not a Substitute for Legal Advice</footer>
 </div>
-
+ 
 <script>
-const MAX_MB = 900;
-const MAX_BYTES = MAX_MB * 1024 * 1024;
-let selectedFile = null;
-
-document.getElementById('fileInput').addEventListener('change', function(e) {
-  if (e.target.files && e.target.files[0]) setFile(e.target.files[0]);
-});
-
-function setFile(file) {
-  if (!file.name.toLowerCase().endsWith('.pdf')) { showError('Please select a PDF file.'); return; }
-  if (file.size > MAX_BYTES) {
-    showError('This file is ' + (file.size/1048576).toFixed(0) + ' MB, which exceeds the 900 MB limit.');
-    return;
-  }
-  selectedFile = file;
-  document.getElementById('fileName').textContent = file.name;
-  document.getElementById('fileSize').textContent = formatBytes(file.size);
+const MAX_MB=900,MAX_BYTES=MAX_MB*1024*1024;
+let selectedFile=null;
+ 
+document.getElementById('fileInput').addEventListener('change',function(e){if(e.target.files&&e.target.files[0])setFile(e.target.files[0])});
+ 
+function setFile(file){
+  if(!file.name.toLowerCase().endsWith('.pdf')){showError('Please select a PDF file.');return}
+  if(file.size>MAX_BYTES){showError('This file is '+(file.size/1048576).toFixed(0)+' MB, which exceeds the 900 MB limit.');return}
+  selectedFile=file;
+  document.getElementById('fileName').textContent=file.name;
+  document.getElementById('fileSize').textContent=formatBytes(file.size);
   document.getElementById('fileInfo').classList.add('visible');
   document.getElementById('pickArea').classList.add('has-file');
-  document.getElementById('analyzeBtn').disabled = false;
+  document.getElementById('analyzeBtn').disabled=false;
   hideError();
 }
-
-function clearFile() {
-  selectedFile = null;
-  document.getElementById('fileInput').value = '';
+function clearFile(){
+  selectedFile=null;
+  document.getElementById('fileInput').value='';
   document.getElementById('fileInfo').classList.remove('visible');
   document.getElementById('pickArea').classList.remove('has-file');
-  document.getElementById('analyzeBtn').disabled = true;
+  document.getElementById('analyzeBtn').disabled=true;
 }
-
-function formatBytes(b) {
-  if (b < 1024) return b + ' B';
-  if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
-  return (b/1048576).toFixed(1) + ' MB';
-}
-
-async function analyzeDocument() {
-  if (!selectedFile) return;
-
-  document.getElementById('uploadSection').style.display = 'none';
+function formatBytes(b){if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(1)+' MB'}
+ 
+async function analyzeDocument(){
+  if(!selectedFile)return;
+  document.getElementById('uploadSection').style.display='none';
   document.getElementById('results').classList.remove('visible');
-  hideError();
-  showProgress();
-  setProgress('Uploading document…', 'Sending to server…');
-  animateBar(0, 15, 3000);
-
-  const formData = new FormData();
-  formData.append('file', selectedFile);
-
+  hideError();showProgress();
+  setProgress('Uploading document…','Sending to server…');
+  animateBar(0,15,3000);
+  const fd=new FormData();fd.append('file',selectedFile);
   let response;
-  try {
-    response = await fetch('/analyze', { method: 'POST', body: formData });
-  } catch (e) {
-    return fail('Could not reach the server: ' + e.message);
-  }
-
-  if (response.ok) {
-    animateBar(15, 90, 2000);
-    setProgress('Analyzing the appellate record with AI…', 'This may take several minutes for large records');
-  }
-
+  try{response=await fetch('/analyze',{method:'POST',body:fd})}
+  catch(e){return fail('Could not reach the server: '+e.message)}
+  if(response.ok){animateBar(15,90,2000);setProgress('Analyzing the appellate record with AI…','This may take several minutes for large records')}
   let data;
-  try {
-    data = await response.json();
-  } catch (e) {
-    return fail('Server returned an unexpected response.');
-  }
-
-  if (!response.ok || data.error) {
-    return fail(data.error || 'Server error ' + response.status);
-  }
-
-  animateBar(90, 100, 500);
-  setTimeout(() => { hideProgress(); renderResults(data); }, 600);
+  try{data=await response.json()}catch(e){return fail('Server returned an unexpected response.')}
+  if(!response.ok||data.error){return fail(data.error||'Server error '+response.status)}
+  animateBar(90,100,500);
+  setTimeout(()=>{hideProgress();renderResults(data)},600);
 }
-
-// Smoothly animate the progress bar between two values over a duration
-function animateBar(from, to, ms) {
-  const fill = document.getElementById('progressBarFill');
-  const start = performance.now();
-  function step(now) {
-    const t = Math.min((now - start) / ms, 1);
-    fill.style.width = (from + (to - from) * t) + '%';
-    if (t < 1) requestAnimationFrame(step);
-  }
+ 
+function animateBar(from,to,ms){
+  const fill=document.getElementById('progressBarFill');
+  const start=performance.now();
+  function step(now){const t=Math.min((now-start)/ms,1);fill.style.width=(from+(to-from)*t)+'%';if(t<1)requestAnimationFrame(step)}
   requestAnimationFrame(step);
 }
-
-function setProgress(label, sub) {
-  document.getElementById('progressLabel').textContent = label;
-  document.getElementById('progressSub').textContent = sub;
+function setProgress(label,sub){document.getElementById('progressLabel').textContent=label;document.getElementById('progressSub').textContent=sub}
+function showProgress(){document.getElementById('progressSection').classList.add('visible')}
+function hideProgress(){document.getElementById('progressSection').classList.remove('visible')}
+function showError(msg){const b=document.getElementById('errorBox');b.textContent='⚠ '+msg;b.classList.add('visible')}
+function hideError(){document.getElementById('errorBox').classList.remove('visible')}
+function fail(msg){showError(msg);hideProgress();document.getElementById('uploadSection').style.display='block'}
+function resetApp(){clearFile();document.getElementById('uploadSection').style.display='block';document.getElementById('results').classList.remove('visible');document.getElementById('sectionsContainer').innerHTML='';hideError();hideProgress()}
+ 
+// ── Print & PDF export ──────────────────────────────────────
+function expandAll(){
+  document.querySelectorAll('.section-card').forEach(c=>c.classList.remove('collapsed'));
 }
-function showProgress() { document.getElementById('progressSection').classList.add('visible'); }
-function hideProgress() { document.getElementById('progressSection').classList.remove('visible'); }
-function showError(msg) { const b = document.getElementById('errorBox'); b.textContent = '⚠ ' + msg; b.classList.add('visible'); }
-function hideError() { document.getElementById('errorBox').classList.remove('visible'); }
-function fail(msg) { showError(msg); hideProgress(); document.getElementById('uploadSection').style.display = 'block'; }
-
-function resetApp() {
-  clearFile();
-  document.getElementById('uploadSection').style.display = 'block';
-  document.getElementById('results').classList.remove('visible');
-  document.getElementById('sectionsContainer').innerHTML = '';
-  hideError(); hideProgress();
+function printSummary(){
+  expandAll();
+  setTimeout(()=>window.print(),100);
 }
-
-// ── Render results ─────────────────────────────────────────────────────────
-function renderResults(data) {
-  const c = document.getElementById('sectionsContainer');
-  c.innerHTML = '';
-  if (data.caseTitle) {
-    const el = document.createElement('p');
-    el.style.cssText = 'font-family:"Playfair Display",serif;font-size:1.1rem;color:var(--gold);margin-bottom:24px;font-style:italic;';
-    el.textContent = data.caseTitle; c.appendChild(el);
+function exportPDF(){
+  expandAll();
+  // Set document title so the browser uses it as the filename
+  const oldTitle=document.title;
+  const caseEl=document.getElementById('caseTitleEl');
+  if(caseEl&&caseEl.textContent){
+    document.title='Appeal Record Summary - '+caseEl.textContent.replace(/[^a-zA-Z0-9 ,.-]/g,'').trim();
+  } else {
+    document.title='Appeal Record Summary';
   }
-  addSection(c,'1','Pleadings Filed',                                                   renderPleadings(data.pleadings||[]));
-  addSection(c,'2','Witnesses & Testimony (Affidavit, Declaration, Deposition, Trial)', renderWitnesses(data.witnesses||[]));
-  addSection(c,'3','Dispositive Motions',                                               renderDispositive(data.dispositiveMotions||[]));
-  addSection(c,'4','Orders & Judgments',                                                renderOrders(data.ordersAndJudgments||[]));
-  addSection(c,'5','Trial',                                                             renderTrial(data.trial||{occurred:false}));
-  addSection(c,'6','Pretrial Orders, Motions in Limine & Pretrial Rulings',             renderPretrial(data.pretrialMatters||[]));
-  addSection(c,'7','Trial Objections',                                                  renderObjections(data.trialObjections||[]));
+  setTimeout(()=>{
+    window.print();
+    setTimeout(()=>{document.title=oldTitle},1000);
+  },150);
+}
+ 
+// ── Render results ──────────────────────────────────────────
+function renderResults(data){
+  const c=document.getElementById('sectionsContainer');
+  c.innerHTML='';
+  if(data.caseTitle){
+    const el=document.createElement('div');
+    el.className='case-title';
+    el.id='caseTitleEl';
+    el.textContent=data.caseTitle;
+    c.appendChild(el);
+  }
+  addSection(c,'1','Pleadings Filed',data.pleadings||[],renderPleadings);
+  addSection(c,'2','Witnesses & Testimony',data.witnesses||[],renderWitnesses);
+  addSection(c,'3','Dispositive Motions',data.dispositiveMotions||[],renderDispositive);
+  addSection(c,'4','Orders & Judgments',data.ordersAndJudgments||[],renderOrders);
+  addSection(c,'5','Trial',data.trial?[data.trial]:[],renderTrial);
+  addSection(c,'6','Pretrial Orders & Motions in Limine',data.pretrialMatters||[],renderPretrial);
+  addSection(c,'7','Trial Objections',data.trialObjections||[],renderObjections);
   document.getElementById('results').classList.add('visible');
 }
-
-function addSection(container, num, title, bodyHTML) {
-  const card = document.createElement('div');
-  card.className = 'section-card';
-  card.innerHTML = `<div class="section-header" onclick="toggleSection(this.parentElement)"><div class="section-num">${num}</div><div class="section-title">${title}</div><div class="section-toggle">▾</div></div><div class="section-body">${bodyHTML}</div>`;
+ 
+function addSection(container,num,title,items,renderer){
+  const card=document.createElement('div');
+  card.className='section-card';
+  const isTrialSection=(num==='5');
+  const trialData=isTrialSection&&items.length?items[0]:null;
+  const trialOccurred=trialData&&trialData.occurred;
+  const count=isTrialSection?(trialOccurred?'Yes':'No'):items.length;
+  const countLabel=isTrialSection?count:(items.length+' item'+(items.length!==1?'s':''));
+  card.innerHTML=`
+    <div class="section-header" onclick="toggleSection(this.parentElement)">
+      <div class="section-num">${num}</div>
+      <div class="section-title">${title}</div>
+      <span class="section-count">${countLabel}</span>
+      <div class="section-toggle">▾</div>
+    </div>
+    <div class="section-body">${renderer(items)}</div>`;
   container.appendChild(card);
 }
-function toggleSection(card) { card.classList.toggle('collapsed'); }
-function dt(d) { if (!d||d==='unknown') return ''; return `<span class="date-tag">${escHtml(d)}</span>`; }
-function escHtml(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-function renderPleadings(items) {
-  if (!items.length) return '<p><em>No pleadings identified in the record.</em></p>';
-  return items.map(p=>`<div class="doc-entry">${dt(p.date)}<strong>${escHtml(p.title)}</strong>${p.type?` <span style="color:var(--text-light);font-size:0.85rem;">[${escHtml(p.type)}]</span>`:''}${p.summary?`<p style="margin-top:6px;">${escHtml(p.summary)}</p>`:''}</div>`).join('');
+function toggleSection(card){card.classList.toggle('collapsed')}
+function dt(d){if(!d||d==='unknown')return '';return `<span class="date-tag">${esc(d)}</span>`}
+function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+ 
+function renderPleadings(items){
+  if(!items.length)return '<p><em>No pleadings identified in the record.</em></p>';
+  return items.map(p=>`
+    <div class="doc-entry">
+      <div class="doc-meta">${dt(p.date)}${p.type?`<span class="type-tag">${esc(p.type)}</span>`:''}</div>
+      <div class="doc-entry-title">${esc(p.title)}</div>
+      ${p.summary?`<div class="doc-summary">${esc(p.summary)}</div>`:''}
+    </div>`).join('');
 }
-function renderWitnesses(items) {
-  if (!items.length) return '<p><em>No witness testimony identified in the record.</em></p>';
-  return items.map(w=>`<div class="doc-entry"><strong style="color:var(--gold-light);">${escHtml(w.name)}</strong>${w.type?` <span style="color:var(--text-light);font-size:0.85rem;">[${escHtml(w.type)}]</span>`:''}${dt(w.date)}${w.keyTestimony&&w.keyTestimony.length?`<ul style="margin-top:8px;">${w.keyTestimony.map(t=>`<li>${escHtml(t)}</li>`).join('')}</ul>`:''}</div>`).join('');
+ 
+function renderWitnesses(items){
+  if(!items.length)return '<p><em>No witness testimony identified in the record.</em></p>';
+  return items.map(w=>`
+    <div class="doc-entry">
+      <div class="doc-meta">${dt(w.date)}${w.type?`<span class="type-tag">${esc(w.type)}</span>`:''}</div>
+      <div class="witness-name">${esc(w.name)}</div>
+      ${w.keyTestimony&&w.keyTestimony.length?`
+        <div class="arguments-label">Key Testimony</div>
+        <ul class="testimony-list">${w.keyTestimony.map(t=>`<li>${esc(t)}</li>`).join('')}</ul>`:''}
+    </div>`).join('');
 }
-function renderDispositive(items) {
-  if (!items.length) return '<p><em>No dispositive motions identified in the record.</em></p>';
-  return items.map(m=>`<div class="doc-entry">${dt(m.date)}<strong>${escHtml(m.title)}</strong>${m.type?` <span style="color:var(--text-light);font-size:0.85rem;">[${escHtml(m.type)}]</span>`:''}${m.filedBy?`<div style="font-size:0.88rem;color:var(--text-light);margin-top:4px;">Filed by: ${escHtml(m.filedBy)}</div>`:''}${m.mainArguments&&m.mainArguments.length?`<h4>Main Arguments</h4><ul>${m.mainArguments.map(a=>`<li>${escHtml(a)}</li>`).join('')}</ul>`:''}${m.courtRuling?`<div style="margin-top:8px;"><strong style="color:var(--gold);">Court Ruling</strong> ${dt(m.rulingDate)}<br>${escHtml(m.courtRuling)}</div>`:''}</div>`).join('');
+ 
+function renderDispositive(items){
+  if(!items.length)return '<p><em>No dispositive motions identified in the record.</em></p>';
+  return items.map(m=>`
+    <div class="doc-entry">
+      <div class="doc-meta">${dt(m.date)}${m.type?`<span class="type-tag">${esc(m.type)}</span>`:''}</div>
+      <div class="doc-entry-title">${esc(m.title)}</div>
+      ${m.filedBy?`<div class="filed-by">Filed by: ${esc(m.filedBy)}</div>`:''}
+      ${m.mainArguments&&m.mainArguments.length?`
+        <div class="arguments-label">Main Arguments</div>
+        <ul class="testimony-list">${m.mainArguments.map(a=>`<li>${esc(a)}</li>`).join('')}</ul>`:''}
+      ${m.courtRuling?`
+        <div class="ruling-box">
+          <div class="ruling-label">Court Ruling</div>
+          <div class="ruling-text">${esc(m.courtRuling)}</div>
+          ${m.rulingDate?`<div class="ruling-date">${esc(m.rulingDate)}</div>`:''}
+        </div>`:''}
+    </div>`).join('');
 }
-function renderOrders(items) {
-  if (!items.length) return '<p><em>No orders or judgments identified in the record.</em></p>';
-  return items.map(o=>`<div class="doc-entry">${dt(o.date)}<strong>${escHtml(o.title)}</strong>${o.type?` <span style="color:var(--text-light);font-size:0.85rem;">[${escHtml(o.type)}]</span>`:''}${o.summary?`<p style="margin-top:6px;">${escHtml(o.summary)}</p>`:''}</div>`).join('');
+ 
+function renderOrders(items){
+  if(!items.length)return '<p><em>No orders or judgments identified in the record.</em></p>';
+  return items.map(o=>`
+    <div class="doc-entry">
+      <div class="doc-meta">${dt(o.date)}${o.type?`<span class="type-tag">${esc(o.type)}</span>`:''}</div>
+      <div class="doc-entry-title">${esc(o.title)}</div>
+      ${o.summary?`<div class="doc-summary">${esc(o.summary)}</div>`:''}
+      ${o.significance?`<div class="doc-summary">${esc(o.significance)}</div>`:''}
+    </div>`).join('');
 }
-function renderTrial(trial) {
-  if (!trial.occurred) return '<p><em>No trial is reflected in this record.</em></p>';
+ 
+function renderTrial(items){
+  const trial=items&&items.length?items[0]:null;
+  if(!trial||!trial.occurred)return '<p><em>No trial is reflected in this record.</em></p>';
   let html='';
-  if (trial.startDate||trial.endDate) html+=`<p><strong>Trial Dates:</strong> ${escHtml(trial.startDate||'')}${trial.endDate&&trial.endDate!==trial.startDate?' – '+escHtml(trial.endDate):''}</p>`;
-  if (trial.summary) html+=`<p>${escHtml(trial.summary)}</p>`;
-  (trial.days||[]).forEach(d=>{
-    html+=`<h3>Day ${d.dayNumber}${d.date?' — '+escHtml(d.date):''}</h3>`;
-    if(d.description)html+=`<p>${escHtml(d.description)}</p>`;
-    if(d.witnesses&&d.witnesses.length)html+=`<p><strong>Witnesses:</strong> ${d.witnesses.map(escHtml).join(', ')}</p>`;
-    if(d.significantEvents&&d.significantEvents.length)html+=`<ul>${d.significantEvents.map(e=>`<li>${escHtml(e)}</li>`).join('')}</ul>`;
-  });
+  if(trial.summary)html+=`<div class="doc-summary" style="margin-bottom:20px">${esc(trial.summary)}</div>`;
+  if(trial.startDate||trial.endDate)html+=`<p><strong>Trial Dates:</strong> ${esc(trial.startDate||'')}${trial.endDate&&trial.endDate!==trial.startDate?' – '+esc(trial.endDate):''}</p>`;
+  if(trial.days&&trial.days.length){
+    html+='<h3>Day-by-Day Summary</h3>';
+    trial.days.forEach(d=>{
+      html+=`<div class="trial-day">
+        <div class="trial-day-header">Day ${d.dayNumber}${d.date?' — '+esc(d.date):''}</div>`;
+      if(d.description)html+=`<p>${esc(d.description)}</p>`;
+      if(d.witnesses&&d.witnesses.length)html+=`<p><strong>Witnesses:</strong> ${d.witnesses.map(esc).join(', ')}</p>`;
+      if(d.significantEvents&&d.significantEvents.length)html+=`<ul>${d.significantEvents.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`;
+      html+='</div>';
+    });
+  }
   if(trial.exhibits&&trial.exhibits.length){
-    html+=`<h3>Exhibits</h3>`;
-    html+=trial.exhibits.map(ex=>`<div class="doc-entry"><strong>Exhibit ${escHtml(ex.id)}</strong> ${dt(ex.date)}${ex.admitted!==undefined?(ex.admitted?'<span class="tag-admitted">ADMITTED</span>':'<span class="tag-denied">NOT ADMITTED</span>'):''}${ex.offeredBy?` <span style="font-size:0.85rem;color:var(--text-light);">Offered by: ${escHtml(ex.offeredBy)}</span>`:''}<div style="margin-top:4px;">${escHtml(ex.description)}</div>${ex.reason?`<div style="font-size:0.88rem;color:var(--text-light);">${escHtml(ex.reason)}</div>`:''}</div>`).join('');
+    html+='<h3>Exhibits</h3>';
+    html+=trial.exhibits.map(ex=>`
+      <div class="exhibit-row">
+        <div class="exhibit-id">Ex. ${esc(ex.id)} ${dt(ex.date)}</div>
+        <div class="exhibit-desc">
+          ${ex.admitted!==undefined?(ex.admitted?'<span class="tag-admitted">ADMITTED</span> ':'<span class="tag-denied">NOT ADMITTED</span> '):''}
+          ${esc(ex.description)}
+          ${ex.offeredBy?` <span style="color:var(--text-light);font-size:.88rem;">(offered by ${esc(ex.offeredBy)})</span>`:''}
+          ${ex.reason?`<br><span style="font-size:.88rem;color:var(--text-light)">${esc(ex.reason)}</span>`:''}
+        </div>
+      </div>`).join('');
   }
   return html||'<p><em>Trial occurred but details were not extracted.</em></p>';
 }
-function renderPretrial(items) {
-  if (!items.length) return '<p><em>No pretrial motions or orders identified in the record.</em></p>';
-  return items.map(m=>`<div class="doc-entry">${dt(m.date)}<strong>${escHtml(m.title)}</strong>${m.type?` <span style="color:var(--text-light);font-size:0.85rem;">[${escHtml(m.type)}]</span>`:''}${m.summary?`<p style="margin-top:6px;">${escHtml(m.summary)}</p>`:''}${m.ruling?`<p><strong style="color:var(--gold);">Ruling:</strong> ${escHtml(m.ruling)}</p>`:''}</div>`).join('');
+ 
+function renderPretrial(items){
+  if(!items.length)return '<p><em>No pretrial motions or orders identified in the record.</em></p>';
+  return items.map(m=>`
+    <div class="doc-entry">
+      <div class="doc-meta">${dt(m.date)}${m.type?`<span class="type-tag">${esc(m.type)}</span>`:''}</div>
+      <div class="doc-entry-title">${esc(m.title)}</div>
+      ${m.summary?`<div class="doc-summary">${esc(m.summary)}</div>`:''}
+      ${m.ruling?`<div class="ruling-box"><div class="ruling-label">Ruling</div><div class="ruling-text">${esc(m.ruling)}</div></div>`:''}
+    </div>`).join('');
 }
-function renderObjections(items) {
-  if (!items.length) return '<p><em>No trial objections identified in the record.</em></p>';
-  return items.map(o=>`<div class="doc-entry">${dt(o.date)}${o.sustained!==undefined?(o.sustained?'<span class="tag-admitted">SUSTAINED</span>':'<span class="tag-denied">OVERRULED</span>'):''}${o.objectingParty?` <strong>${escHtml(o.objectingParty)}</strong>`:''}${o.basis?` <span style="color:var(--text-light);font-size:0.88rem;">Basis: ${escHtml(o.basis)}</span>`:''}${o.evidenceOrTestimony?`<p style="margin-top:6px;">${escHtml(o.evidenceOrTestimony)}</p>`:''}${o.courtRuling?`<p><strong style="color:var(--gold);">Ruling:</strong> ${escHtml(o.courtRuling)}</p>`:''}</div>`).join('');
+ 
+function renderObjections(items){
+  if(!items.length)return '<p><em>No trial objections identified in the record.</em></p>';
+  return items.map(o=>`
+    <div class="doc-entry">
+      <div class="doc-meta">
+        ${dt(o.date)}
+        ${o.sustained!==undefined?(o.sustained?'<span class="tag-sustained">SUSTAINED</span>':'<span class="tag-overruled">OVERRULED</span>'):''}
+        ${o.objectingParty?`<span class="filed-by">${esc(o.objectingParty)}</span>`:''}
+      </div>
+      ${o.basis?`<div class="doc-entry-title">Basis: ${esc(o.basis)}</div>`:''}
+      ${o.evidenceOrTestimony?`<div class="doc-summary">${esc(o.evidenceOrTestimony)}</div>`:''}
+      ${o.courtRuling?`<div class="ruling-box"><div class="ruling-label">Court Ruling</div><div class="ruling-text">${esc(o.courtRuling)}</div></div>`:''}
+    </div>`).join('');
 }
 </script>
 </body>
