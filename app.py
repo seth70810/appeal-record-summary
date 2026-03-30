@@ -366,7 +366,14 @@ def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=
         text = (chr(10)+chr(10)).join(parts)
         parts = None  # free page text list
         if not text.strip(): continue
-        prompt = "Analyze this section (" + label + ") and return the structured JSON summary." + chr(10)*2 + text
+        prompt = (
+            "IMPORTANT: You MUST respond with ONLY a valid JSON object. "
+            "Do NOT write any explanation, commentary, or description. "
+            "Do NOT say what the pages contain. "
+            "Output ONLY the JSON object and nothing else.\n\n"
+            "Analyze section " + label + " of the appellate record "
+            "and return the structured JSON summary.\n\n" + text
+        )
         text = None  # free extracted text before API call
         gc.collect()
         chunk_start_time = time.time()
@@ -380,7 +387,42 @@ def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=
         if not raw_text.strip():
             print(f"    WARNING: Chunk {i+1} returned empty response, skipping")
             continue
-        results.append(parse_json(raw_text))
+        # First attempt to parse
+        parsed = None
+        try:
+            parsed = parse_json(raw_text)
+        except Exception as parse_err:
+            # Claude returned narrative instead of JSON — retry with correction prompt
+            print(f"    Chunk {i+1} parse failed ({parse_err}). Retrying with correction prompt...")
+            correction = (
+                "Your previous response was not valid JSON. You responded with narrative text instead of JSON.\n"
+                "You MUST output ONLY a valid JSON object with NO other text before or after it.\n"
+                "Do not explain, describe, or comment. Output ONLY the JSON object.\n\n"
+                "Here is the section again:\n\n" + text if text else
+                "Here is the section again. Output ONLY the raw JSON object:\n\n"
+            )
+            # text may already be None — rebuild it for the retry
+            if text is None:
+                retry_parts = []
+                for rp in range(start, end):
+                    rt = doc[rp].get_text("text")
+                    if rt.strip(): retry_parts.append("[Page " + str(rp+1) + "]" + chr(10) + rt)
+                retry_text = (chr(10)+chr(10)).join(retry_parts)
+                correction = (
+                    "Your previous response was not valid JSON. Output ONLY a valid JSON object — "
+                    "no explanation, no description, no commentary. Just the JSON.\n\n"
+                    "Analyze section " + label + ":\n\n" + retry_text
+                )
+            try:
+                r2 = _call_claude_with_retry(client, SYSTEM_PROMPT, correction, job_id=job_id)
+                raw_text = r2.content[0].text if r2.content else ""
+                parsed = parse_json(raw_text)
+                print(f"    Chunk {i+1} retry succeeded")
+            except Exception as retry_err:
+                print(f"    Chunk {i+1} retry also failed: {retry_err}. Skipping chunk.")
+                continue
+        if parsed is not None:
+            results.append(parsed)
         print(f"    Chunk {i+1}/{n} OK — pages {start+1}-{end}/{total_pages} ({last_input_tokens} tokens, stop={stop_reason})")
         gc.collect()
     return results
