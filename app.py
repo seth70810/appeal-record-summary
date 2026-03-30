@@ -329,30 +329,49 @@ def _retry_wait_seconds(e, attempt):
     print(f"    Rate limited (attempt {attempt+1}). Waiting {wait}s...")
     return wait
 
+class _FakeResponse:
+    """Mimics the Anthropic response object so all callers can use
+    r.content[0].text, r.usage.input_tokens, and r.stop_reason
+    regardless of whether we used streaming or not.
+    """
+    def __init__(self, text, input_tokens=0, stop_reason="end_turn"):
+        self.content     = [type("C", (), {"text": text})()]
+        self.stop_reason = stop_reason
+        self.usage       = type("U", (), {"input_tokens": input_tokens})()
+
+
 def _call_claude_with_retry(client, system, user_content, max_tokens=16000, max_retries=8, job_id=None):
-    """Call Claude API; on rate-limit errors waits the header-specified reset
-    time (or exponential backoff) before retrying.
-    Also returns the tokens_used so callers can pace themselves.
+    """Call Claude API using streaming to bypass the SDK 10-minute
+    non-streaming limit. Retries on rate-limit errors with header-aware
+    backoff. Returns a _FakeResponse mimicking the standard response.
     """
     import time, gc
     for attempt in range(max_retries):
         try:
-            r = client.messages.create(
+            text_parts   = []
+            stop_reason  = "end_turn"
+            input_tokens = 0
+            with client.messages.stream(
                 model="claude-sonnet-4-20250514",
                 max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user_content}]
-            )
-            return r
+            ) as stream:
+                for text in stream.text_stream:
+                    text_parts.append(text)
+                final        = stream.get_final_message()
+                stop_reason  = getattr(final, "stop_reason", "end_turn")
+                input_tokens = getattr(getattr(final, "usage", None), "input_tokens", 0)
+            return _FakeResponse("".join(text_parts), input_tokens, stop_reason)
         except Exception as e:
             if _is_rate_limit(e) and attempt < max_retries - 1:
                 wait = _retry_wait_seconds(e, attempt)
-                # Sleep in 10s segments; write heartbeat each segment
                 slept = 0
                 while slept < wait:
                     chunk_s = min(10, wait - slept)
                     time.sleep(chunk_s)
                     slept += chunk_s
+                    if job_id: _heartbeat(job_id)
                 gc.collect()
                 continue
             raise  # non-rate-limit error OR out of retries
