@@ -235,10 +235,50 @@ def analyze_pdf_bytes(client, pdf_bytes):
          {"type":"text","text":"Analyze this appellate court record and return the structured JSON summary."}])
     return parse_json(r.content[0].text)
 
-def _call_claude_with_retry(client, system, user_content, max_tokens=8000, max_retries=6):
-    """Call Claude API with exponential backoff on rate limit errors."""
+def _is_rate_limit(e):
+    """Return True if the exception is a 429 / rate-limit error."""
+    msg = str(e).lower()
+    return ("429" in msg or "rate_limit" in msg or
+            "rate limit" in msg or "overloaded" in msg or
+            getattr(e, "status_code", None) == 429)
+
+def _retry_wait_seconds(e, attempt):
+    """How long to wait before retrying after a rate-limit error.
+    Reads x-ratelimit-reset-tokens from the response headers if available,
+    otherwise falls back to exponential backoff starting at 30s.
+    Returns the number of seconds to sleep.
+    """
+    # The Anthropic SDK stores the raw httpx response on the exception
+    # as e.response (APIStatusError) or e.__cause__.response.
+    resp = getattr(e, "response", None) or getattr(getattr(e, "__cause__", None), "response", None)
+    if resp is not None:
+        headers = getattr(resp, "headers", {})
+        reset_val = (headers.get("x-ratelimit-reset-tokens") or
+                     headers.get("anthropic-ratelimit-tokens-reset") or
+                     headers.get("retry-after"))
+        if reset_val:
+            # Value is like "30s" or "1m30s" or plain seconds as string
+            import re as _re
+            reset_val = str(reset_val).strip()
+            m = _re.match(r"(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s?)?", reset_val)
+            if m:
+                minutes = int(m.group(1) or 0)
+                seconds = float(m.group(2) or 0)
+                wait = minutes * 60 + seconds
+                if wait > 0:
+                    print(f"    Rate limited. Header says reset in {wait:.0f}s — waiting that long...")
+                    return wait + 2  # 2s buffer
+    # Fallback: exponential backoff 30, 60, 120, 240s
+    wait = 30 * (2 ** min(attempt, 3))
+    print(f"    Rate limited (attempt {attempt+1}). No reset header — waiting {wait}s...")
+    return wait
+
+def _call_claude_with_retry(client, system, user_content, max_tokens=8000, max_retries=8):
+    """Call Claude API; on rate-limit errors waits the header-specified reset
+    time (or exponential backoff) before retrying.
+    Also returns the tokens_used so callers can pace themselves.
+    """
     import time, gc
-    delay = 15  # start with 15 second wait
     for attempt in range(max_retries):
         try:
             r = client.messages.create(
@@ -249,20 +289,26 @@ def _call_claude_with_retry(client, system, user_content, max_tokens=8000, max_r
             )
             return r
         except Exception as e:
-            msg = str(e)
-            if '429' in msg or 'rate_limit' in msg:
-                if attempt < max_retries - 1:
-                    wait = delay * (2 ** attempt)  # 15, 30, 60, 120, 240, 480s
-                    print(f"    Rate limited. Waiting {wait}s before retry {attempt+2}/{max_retries}...")
-                    time.sleep(wait)
-                    gc.collect()
-                    continue
-            raise  # re-raise non-rate-limit errors or if out of retries
+            if _is_rate_limit(e) and attempt < max_retries - 1:
+                wait = _retry_wait_seconds(e, attempt)
+                time.sleep(wait)
+                gc.collect()
+                continue
+            raise  # non-rate-limit error OR out of retries
+
+def _tokens_used(r):
+    """Extract input token count from a Claude response object."""
+    try: return r.usage.input_tokens
+    except Exception: return 20000  # safe fallback
 
 def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=None):
+    import time, gc
     results = []
     if n_chunks is None: n_chunks = math.ceil(total_pages/MAX_PAGES_PER_CHUNK)
     n = n_chunks
+    last_input_tokens = 0   # tokens used by the previous chunk
+    chunk_start_time  = 0.0 # wall-clock time the previous API call started
+    RATE_LIMIT = 30000      # tokens per minute
     for i in range(n):
         start = i*MAX_PAGES_PER_CHUNK
         end   = min(start+MAX_PAGES_PER_CHUNK, total_pages)
@@ -270,6 +316,15 @@ def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=
         label  = prefix + "pages " + str(start+1) + "-" + str(end) + "/" + str(total_pages)
         print("    Chunk", i+1, "/", n, ":", label)
         if job_id: job_progress(job_id, "Analyzing " + label + " (section " + str(i+1) + " of " + str(n) + ")")
+        # Adaptive pacing: if the previous chunk used T tokens, we need to
+        # wait until T/30000 minutes have elapsed since that call started.
+        if i > 0 and last_input_tokens > 0:
+            elapsed = time.time() - chunk_start_time
+            needed  = (last_input_tokens / RATE_LIMIT) * 60  # seconds
+            wait    = max(0, needed - elapsed) + 2  # 2s buffer
+            if wait > 0:
+                print(f"    Pacing: used {last_input_tokens} tokens, waiting {wait:.1f}s...")
+                time.sleep(wait)
         parts = []
         for p in range(start, end):
             t = doc[p].get_text("text")
@@ -277,18 +332,16 @@ def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=
         text = (chr(10)+chr(10)).join(parts)
         parts = None  # free page text list
         if not text.strip(): continue
-        try:
-            prompt = "Analyze this section (" + label + ") and return the structured JSON summary." + chr(10)*2 + text
-            text = None  # free extracted text before API call
-            import gc; gc.collect()
-            r = _call_claude_with_retry(client, SYSTEM_PROMPT, prompt)
-            prompt = None
-            results.append(parse_json(r.content[0].text))
-            print("    Chunk", i+1, "OK")
-        except Exception as e:
-            print("    Chunk", i+1, "error:", e)
-        finally:
-            import gc; gc.collect()
+        prompt = "Analyze this section (" + label + ") and return the structured JSON summary." + chr(10)*2 + text
+        text = None  # free extracted text before API call
+        gc.collect()
+        chunk_start_time = time.time()
+        r = _call_claude_with_retry(client, SYSTEM_PROMPT, prompt)
+        last_input_tokens = _tokens_used(r)
+        prompt = None
+        results.append(parse_json(r.content[0].text))
+        print(f"    Chunk {i+1} OK ({last_input_tokens} input tokens)")
+        gc.collect()
     return results
 
 def merge_results(client, partials):
