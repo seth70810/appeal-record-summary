@@ -247,9 +247,9 @@ def _is_rate_limit(e):
             "rate limit" in msg or "overloaded" in msg or
             getattr(e, "status_code", None) == 429)
 
-# Gunicorn worker timeout is 120s. Never sleep longer than this or the
-# worker gets killed and the job sticks as "processing" forever.
-MAX_RETRY_SLEEP = 88  # safe margin under 120s gunicorn timeout
+# Gunicorn is configured with --timeout 600. MAX_RETRY_SLEEP must stay
+# well under that. 88s is a safe value that also fits within one rate-limit window.
+MAX_RETRY_SLEEP = 88
 
 def _retry_wait_seconds(e, attempt):
     """How long to wait before retrying after a rate-limit error.
@@ -297,8 +297,7 @@ def _call_claude_with_retry(client, system, user_content, max_tokens=8000, max_r
         except Exception as e:
             if _is_rate_limit(e) and attempt < max_retries - 1:
                 wait = _retry_wait_seconds(e, attempt)
-                # Sleep in 10s segments so gunicorn sees activity
-                # and we can write a progress heartbeat
+                # Sleep in 10s segments; each segment is well under gunicorn timeout
                 slept = 0
                 while slept < wait:
                     chunk_s = min(10, wait - slept)
