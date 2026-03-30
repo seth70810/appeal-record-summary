@@ -170,9 +170,14 @@ def run_analysis(job_id, pdf_bytes, fname):
         job_set(job_id, {"status":"done","result":result})
         print("Job", job_id, "done")
     except Exception as e:
-        print("Job", job_id, "failed:", str(e))
+        err_msg = str(e)
+        print("Job", job_id, "failed:", err_msg)
         print(traceback.format_exc())
-        job_set(job_id, {"status":"error","error":str(e)})
+        # Write error to Redis so the browser shows it rather than spinning
+        try:
+            job_set(job_id, {"status":"error","error":err_msg})
+        except Exception as redis_e:
+            print("Could not write error to Redis:", redis_e)
 
 def do_analysis(pdf_bytes, fname, job_id=None):
     import gc
@@ -242,14 +247,15 @@ def _is_rate_limit(e):
             "rate limit" in msg or "overloaded" in msg or
             getattr(e, "status_code", None) == 429)
 
+# Gunicorn worker timeout is 120s. Never sleep longer than this or the
+# worker gets killed and the job sticks as "processing" forever.
+MAX_RETRY_SLEEP = 88  # safe margin under 120s gunicorn timeout
+
 def _retry_wait_seconds(e, attempt):
     """How long to wait before retrying after a rate-limit error.
     Reads x-ratelimit-reset-tokens from the response headers if available,
-    otherwise falls back to exponential backoff starting at 30s.
-    Returns the number of seconds to sleep.
+    otherwise falls back to exponential backoff. Always capped at 88s.
     """
-    # The Anthropic SDK stores the raw httpx response on the exception
-    # as e.response (APIStatusError) or e.__cause__.response.
     resp = getattr(e, "response", None) or getattr(getattr(e, "__cause__", None), "response", None)
     if resp is not None:
         headers = getattr(resp, "headers", {})
@@ -257,7 +263,6 @@ def _retry_wait_seconds(e, attempt):
                      headers.get("anthropic-ratelimit-tokens-reset") or
                      headers.get("retry-after"))
         if reset_val:
-            # Value is like "30s" or "1m30s" or plain seconds as string
             import re as _re
             reset_val = str(reset_val).strip()
             m = _re.match(r"(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s?)?", reset_val)
@@ -266,11 +271,12 @@ def _retry_wait_seconds(e, attempt):
                 seconds = float(m.group(2) or 0)
                 wait = minutes * 60 + seconds
                 if wait > 0:
-                    print(f"    Rate limited. Header says reset in {wait:.0f}s — waiting that long...")
-                    return wait + 2  # 2s buffer
-    # Fallback: exponential backoff 30, 60, 120, 240s
-    wait = 30 * (2 ** min(attempt, 3))
-    print(f"    Rate limited (attempt {attempt+1}). No reset header — waiting {wait}s...")
+                    wait = min(wait + 2, MAX_RETRY_SLEEP)
+                    print(f"    Rate limited. Header reset={reset_val} → waiting {wait:.0f}s...")
+                    return wait
+    # Fallback: 20, 40, 60, 80s (capped)
+    wait = min(20 * (2 ** min(attempt, 2)), MAX_RETRY_SLEEP)
+    print(f"    Rate limited (attempt {attempt+1}). Waiting {wait}s...")
     return wait
 
 def _call_claude_with_retry(client, system, user_content, max_tokens=8000, max_retries=8):
@@ -291,7 +297,13 @@ def _call_claude_with_retry(client, system, user_content, max_tokens=8000, max_r
         except Exception as e:
             if _is_rate_limit(e) and attempt < max_retries - 1:
                 wait = _retry_wait_seconds(e, attempt)
-                time.sleep(wait)
+                # Sleep in 10s segments so gunicorn sees activity
+                # and we can write a progress heartbeat
+                slept = 0
+                while slept < wait:
+                    chunk_s = min(10, wait - slept)
+                    time.sleep(chunk_s)
+                    slept += chunk_s
                 gc.collect()
                 continue
             raise  # non-rate-limit error OR out of retries
@@ -330,8 +342,13 @@ def analyze_in_chunks(client, doc, total_pages, fname="", job_id=None, n_chunks=
             needed  = (last_input_tokens / RATE_LIMIT) * 60  # seconds
             wait    = max(0, needed - elapsed) + 2  # 2s buffer
             if wait > 0:
+                wait = min(wait, MAX_RETRY_SLEEP)
                 print(f"    Pacing: {last_input_tokens} tokens used, waiting {wait:.1f}s before next chunk...")
-                time.sleep(wait)
+                # Sleep in segments to stay under gunicorn timeout
+                slept = 0
+                while slept < wait:
+                    time.sleep(min(10, wait - slept))
+                    slept += 10
         parts = []
         for p in range(start, end):
             t = doc[p].get_text("text")
