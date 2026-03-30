@@ -1,12 +1,4 @@
-import os
-import json
-import math
-import base64
-import traceback
-import subprocess
-import sys
-import uuid
-import threading
+import os, json, math, base64, traceback, subprocess, sys, uuid, threading
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
  
@@ -15,6 +7,8 @@ CORS(app)
  
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MAX_PAGES_PER_CHUNK = 80
+# Note: actual file size limit is enforced by Render's proxy (~100 MB on most plans).
+# Flask limit is set high; real cap is infrastructure.
 MAX_FILE_BYTES = 900 * 1024 * 1024
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_BYTES
  
@@ -35,67 +29,116 @@ def make_client():
         os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY
         return anthropic.Anthropic()
  
+# ── Routes ────────────────────────────────────────────────────
+ 
 @app.route("/")
 def index():
     return Response(INDEX_HTML, mimetype="text/html")
  
 @app.route("/health")
 def health():
-    return jsonify({"status":"ok","html_chars":len(INDEX_HTML),"api_key_set":bool(ANTHROPIC_API_KEY),"python":sys.version})
+    return jsonify({"status":"ok","html_chars":len(INDEX_HTML),
+                    "api_key_set":bool(ANTHROPIC_API_KEY),"python":sys.version})
+ 
+@app.route("/test", methods=["GET","POST"])
+def test():
+    """Quick connectivity and upload test — returns info about what was received."""
+    info = {
+        "method": request.method,
+        "content_length": request.content_length,
+        "content_type": request.content_type,
+        "files": list(request.files.keys()),
+        "api_key_set": bool(ANTHROPIC_API_KEY),
+    }
+    if "file" in request.files:
+        f = request.files["file"]
+        try:
+            data = f.read()
+            info["file_name"] = f.filename
+            info["file_bytes"] = len(data)
+            info["file_mb"] = round(len(data)/1048576, 2)
+        except Exception as e:
+            info["file_read_error"] = str(e)
+    return jsonify(info)
  
 @app.route("/versions")
 def versions():
     try:
-        r = subprocess.run([sys.executable,"-m","pip","list","--format=json"],capture_output=True,text=True,timeout=10)
+        r = subprocess.run([sys.executable,"-m","pip","list","--format=json"],
+                           capture_output=True, text=True, timeout=15)
         pkgs = json.loads(r.stdout)
-        want = {p["name"].lower():p["version"] for p in pkgs if p["name"].lower() in ("anthropic","httpx","flask","pymupdf")}
+        want = {p["name"].lower():p["version"] for p in pkgs
+                if p["name"].lower() in ("anthropic","httpx","flask","pymupdf")}
         return jsonify(want)
     except Exception as e:
         return jsonify({"error":str(e)})
  
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({"error":"File too large for server infrastructure. Try a smaller PDF."}), 413
+ 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    print("Unhandled exception:", traceback.format_exc())
+    return jsonify({"error": f"Server error: {str(e)}"}), 500
+ 
 @app.route("/upload", methods=["POST"])
 def upload():
+    try:
+        return _upload()
+    except Exception as e:
+        print("Upload error:", traceback.format_exc())
+        return jsonify({"error": f"Upload failed: {str(e)}"}), 500
+ 
+def _upload():
     if not ANTHROPIC_API_KEY:
-        return jsonify({"error":"Server is missing ANTHROPIC_API_KEY."}), 500
+        return jsonify({"error":"Server is missing ANTHROPIC_API_KEY. Check Render Environment settings."}), 500
+ 
     if "file" not in request.files:
-        return jsonify({"error":"No file received."}), 400
+        # Log what we DID receive to help diagnose
+        print(f"No file in request. files={list(request.files.keys())} "
+              f"form={list(request.form.keys())} "
+              f"content_type={request.content_type} "
+              f"content_length={request.content_length}")
+        return jsonify({"error":"No file received. Please select a PDF and try again."}), 400
+ 
     f = request.files["file"]
     fname = f.filename or ""
     if not fname.lower().endswith(".pdf"):
         return jsonify({"error":"Please upload a PDF file."}), 400
-    try:
-        pdf_bytes = f.read()
-    except Exception as e:
-        return jsonify({"error":f"Failed to read file: {str(e)}"}), 400
+ 
+    pdf_bytes = f.read()
     if not pdf_bytes:
         return jsonify({"error":"Uploaded file is empty."}), 400
+ 
     mb = len(pdf_bytes)/1048576
-    print(f"Upload: {fname}  {mb:.1f} MB")
-    if len(pdf_bytes) > MAX_FILE_BYTES:
-        return jsonify({"error":f"File is {mb:.0f} MB, maximum is 900 MB."}), 400
+    print(f"Upload received: {fname}  {mb:.1f} MB")
  
     job_id = str(uuid.uuid4())
     with jobs_lock:
         jobs[job_id] = {"status":"processing"}
+ 
     threading.Thread(target=run_analysis, args=(job_id, pdf_bytes, fname), daemon=True).start()
-    return jsonify({"job_id":job_id}), 202
+    return jsonify({"job_id": job_id}), 202
  
 @app.route("/status/<job_id>")
 def status(job_id):
     with jobs_lock:
         job = jobs.get(job_id)
     if job is None:
-        return jsonify({"status":"error","error":"Job not found."}), 404
+        return jsonify({"status":"error","error":"Job not found — server may have restarted."}), 404
     return jsonify(job)
+ 
+# ── Background analysis ───────────────────────────────────────
  
 def run_analysis(job_id, pdf_bytes, fname):
     try:
         result = do_analysis(pdf_bytes, fname)
         with jobs_lock:
             jobs[job_id] = {"status":"done","result":result}
-        print(f"Job {job_id}: done")
+        print(f"Job {job_id}: complete")
     except Exception as e:
-        print(f"Job {job_id} error:\n{traceback.format_exc()}")
+        print(f"Job {job_id} failed:\n{traceback.format_exc()}")
         with jobs_lock:
             jobs[job_id] = {"status":"error","error":str(e)}
  
@@ -104,21 +147,29 @@ def do_analysis(pdf_bytes, fname):
     try:
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     except Exception as e:
-        raise RuntimeError(f"Could not open PDF: {str(e)}")
+        raise RuntimeError(f"Could not open PDF (may be corrupted or password-protected): {str(e)}")
+ 
     total_pages = len(doc)
     print(f"  Pages: {total_pages}")
     client = make_client()
+ 
     if total_pages <= MAX_PAGES_PER_CHUNK and len(pdf_bytes) <= 32*1024*1024:
         doc.close()
         print("  Strategy: direct base64")
         return analyze_pdf_bytes(client, pdf_bytes)
+ 
     n = math.ceil(total_pages/MAX_PAGES_PER_CHUNK)
     print(f"  Strategy: chunked text ({n} chunks)")
     partials = analyze_in_chunks(client, doc, total_pages)
     doc.close()
+ 
     if not partials:
-        raise RuntimeError("No readable text found. The PDF may be a scanned image.")
-    return partials[0] if len(partials)==1 else merge_results(client, partials)
+        raise RuntimeError(
+            "No readable text could be extracted. "
+            "The PDF may consist of scanned images without embedded text. "
+            "Please use a PDF with selectable text."
+        )
+    return partials[0] if len(partials) == 1 else merge_results(client, partials)
  
 def analyze_pdf_bytes(client, pdf_bytes):
     b64 = base64.b64encode(pdf_bytes).decode("utf-8")
@@ -145,15 +196,18 @@ def analyze_in_chunks(client, doc, total_pages):
                 parts.append(f"[Page {p+1}]\n{t}")
         text = "\n\n".join(parts)
         if not text.strip():
+            print("      No text, skipping")
             continue
         try:
             r = client.messages.create(
                 model="claude-sonnet-4-20250514", max_tokens=8000, system=SYSTEM_PROMPT,
-                messages=[{"role":"user","content":f"Analyze this section ({label}) and return the structured JSON summary.\n\n{text}"}])
+                messages=[{"role":"user","content":
+                    f"Analyze this section ({label}) and return the structured JSON summary.\n\n{text}"
+                }])
             results.append(parse_json(r.content[0].text))
-            print(f"      OK")
+            print("      OK")
         except Exception as e:
-            print(f"      Error: {e}")
+            print(f"      Error on chunk {i+1}: {e}")
     return results
  
 def merge_results(client, partials):
@@ -162,7 +216,7 @@ def merge_results(client, partials):
     r = client.messages.create(
         model="claude-sonnet-4-20250514", max_tokens=8000,
         system=MERGE_PROMPT+combined,
-        messages=[{"role":"user","content":"Merge these partial summaries into one comprehensive JSON summary."}])
+        messages=[{"role":"user","content":"Merge these into one comprehensive JSON summary."}])
     return parse_json(r.content[0].text)
  
 def parse_json(raw):
