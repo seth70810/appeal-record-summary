@@ -1,9 +1,11 @@
 import os, json, math, base64, traceback, subprocess, sys, uuid, threading
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
+from oral_arguments_routes import register_oral_routes
 
 app = Flask(__name__)
 CORS(app)
+register_oral_routes(app)
 
 # Track in-flight analysis threads so SIGTERM can mark them as errors
 _active_jobs = {}  # job_id -> Thread
