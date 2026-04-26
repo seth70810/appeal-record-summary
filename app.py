@@ -2,6 +2,7 @@ import os, json, math, base64, traceback, subprocess, sys, uuid, threading
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from oral_arguments_routes import register_oral_routes
+from auth_payments import register_auth_routes, get_current_user, charge_for_tool
 
 app = Flask(__name__)
 CORS(app)
